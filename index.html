@@ -2,24 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Verslan LPS Derivatives Dashboard</title>
+  <title>Verslan LPS Derivatives Dashboard (Simple)</title>
 
-  <!-- Tailwind CSS via CDN (for your styling) -->
+  <!-- Tailwind for styling -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- React & ReactDOM via CDN -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-
-  <!-- Babel so the browser can understand JSX -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- Recharts via CDN -->
-  <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
-
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
-    .font-sans { font-family: 'Inter', sans-serif; }
+    body { font-family: 'Inter', sans-serif; }
     .dashboard-card { background-color: #1f2937; border: 1px solid #374151; }
     .glow-green { box-shadow: 0 0 15px rgba(34, 197, 94, 0.5); }
     .glow-red { box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
@@ -30,24 +19,229 @@
     }
   </style>
 </head>
-<body class="bg-gray-900 font-sans text-gray-100">
-  <div id="root"></div>
+<body class="bg-gray-900 text-gray-100">
+  <!-- Message Box -->
+  <div id="messageBox"
+       class="hidden fixed top-0 left-0 w-full h-full bg-black/70 z-50 justify-center items-center">
+    <div class="bg-gray-800 p-6 rounded-xl shadow-2xl border-2 border-yellow-500 max-w-sm text-center">
+      <p id="messageBoxText" class="text-xl text-white font-semibold mb-4"></p>
+      <button id="messageBoxClose"
+              class="bg-yellow-500 text-gray-900 font-bold py-2 px-4 rounded-lg hover:bg-yellow-400 transition">
+        Acknowledge
+      </button>
+    </div>
+  </div>
 
-  <!-- Your React app -->
-  <script type="text/babel">
-    const { useState, useEffect, useCallback, useMemo } = React;
-    const {
-      LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
-    } = Recharts;
+  <div class="min-h-screen p-4 sm:p-8">
+    <div class="max-w-7xl mx-auto">
+      <!-- Header -->
+      <header class="mb-10 flex justify-between items-center border-b border-indigo-500/50 pb-4">
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-indigo-400">
+          Verslan <span class="text-gray-200">LPS Derivatives Dashboard</span>
+        </h1>
+        <p class="text-lg font-mono text-gray-500">BUBE Protocol (Simple Demo)</p>
+      </header>
 
-    // Simple replacements for icons (text instead of lucide-react)
-    const Icon = ({ children }) => (
-      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-700 mr-2 text-xs">
-        {children}
-      </span>
-    );
+      <!-- Account summary -->
+      <div class="mb-8 p-6 rounded-xl shadow-2xl dashboard-card">
+        <h2 class="text-xl font-bold text-indigo-400 mb-4 flex items-center">
+          <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-700 mr-2 text-xs">≡</span>
+          Account Summary
+        </h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+          <div class="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+            <p class="text-sm text-gray-400">Total Account Value</p>
+            <p id="totalAccountValue" class="text-2xl font-bold text-indigo-300">$0.00</p>
+          </div>
+          <div class="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+            <p class="text-sm text-gray-400">Initial Margin Locked</p>
+            <p id="initialMarginUsed" class="text-2xl font-bold text-yellow-500">$0.00</p>
+          </div>
+          <div class="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+            <p class="text-sm text-gray-400">Liquid Funds</p>
+            <p id="liquidFunds" class="text-2xl font-bold text-green-500">$0.00</p>
+          </div>
+          <div id="marginStatusBox"
+               class="p-3 rounded-lg border font-bold flex items-center justify-center bg-green-600 border-green-400 text-gray-900">
+            <span id="marginStatusText">HEALTHY</span>
+          </div>
+        </div>
+      </div>
 
-    // --- Constants ---
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Left: Market & probability -->
+        <div class="lg:col-span-2 rounded-xl shadow-2xl p-6 dashboard-card">
+          <h2 class="text-2xl font-bold text-gray-200 mb-4 flex items-center">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-700 mr-2 text-xs">↗</span>
+            Probability Index (P)
+          </h2>
+
+          <!-- Market select -->
+          <div class="mb-4">
+            <label for="marketSelect" class="block text-sm font-medium text-gray-400">
+              Underlying Prediction Market:
+            </label>
+            <select id="marketSelect"
+                    class="mt-1 block w-full pl-3 pr-10 py-3 text-lg rounded-lg bg-gray-800 text-gray-200 border border-gray-700">
+            </select>
+          </div>
+
+          <!-- Current probability -->
+          <div class="bg-indigo-900/40 p-5 rounded-xl mb-6 flex justify-between items-center border border-indigo-700">
+            <div>
+              <p class="text-sm font-medium text-indigo-400">
+                Current Probability Index (P<sub class="text-md">current</sub>)
+              </p>
+              <p id="currentPText" class="text-6xl font-extrabold text-indigo-300">0.00%</p>
+            </div>
+            <div class="text-right">
+              <p class="text-xs text-gray-500">Event:</p>
+              <p id="marketTicker" class="text-xl font-semibold text-gray-200"></p>
+              <p id="marketName" class="text-sm text-gray-400"></p>
+            </div>
+          </div>
+
+          <!-- Simple history -->
+          <div class="bg-gray-800 rounded-lg p-4 h-64 overflow-y-auto">
+            <p class="text-sm font-medium text-gray-400 mb-2">
+              Recent Probability (%) ticks (latest at bottom)
+            </p>
+            <pre id="probHistory" class="text-xs text-gray-300 whitespace-pre-wrap"></pre>
+          </div>
+        </div>
+
+        <!-- Right: Trade panel -->
+        <div class="lg:col-span-1 rounded-xl shadow-2xl p-6 dashboard-card">
+          <h2 class="text-2xl font-bold text-gray-200 mb-6 flex items-center">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-700 mr-2 text-xs">$</span>
+            LPS Trade Terminal
+          </h2>
+
+          <!-- Trade entry section -->
+          <div id="tradeEntrySection" class="space-y-6">
+            <!-- Side -->
+            <div>
+              <label class="block text-sm font-medium text-gray-400 mb-2">Trade Side</label>
+              <div class="flex space-x-4">
+                <button id="sideLongBtn"
+                        class="flex-1 py-3 px-4 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 glow-green">
+                  LONG (YES)
+                </button>
+                <button id="sideShortBtn"
+                        class="flex-1 py-3 px-4 rounded-lg font-semibold bg-gray-700 text-gray-300 hover:bg-gray-600">
+                  SHORT (NO)
+                </button>
+              </div>
+            </div>
+
+            <!-- Notional -->
+            <div>
+              <label for="notionalInput" class="block text-sm font-medium text-gray-400">
+                Notional Value (N)
+              </label>
+              <input id="notionalInput" type="number" min="100" value="100000"
+                     class="mt-1 block w-full border border-gray-700 rounded-lg p-3 bg-gray-800 text-gray-200" />
+              <p class="text-xs text-gray-500 mt-1">
+                P&L = N × ΔP
+              </p>
+            </div>
+
+            <!-- Margin % -->
+            <div>
+              <label for="marginInput" class="block text-sm font-medium text-gray-400">
+                Initial Margin Percentage (IM%)
+              </label>
+              <div class="relative mt-1">
+                <input id="marginInput" type="number" min="5" max="100" value="10"
+                       class="block w-full border border-gray-700 rounded-lg p-3 pr-10 bg-gray-800 text-gray-200" />
+                <span class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 font-semibold">%</span>
+              </div>
+              <p id="leverageText" class="text-xs text-gray-500 mt-1"></p>
+            </div>
+
+            <!-- Required IM -->
+            <div class="bg-indigo-800/40 p-4 rounded-lg flex justify-between border border-indigo-700">
+              <span class="text-md font-medium text-indigo-300">Required IM (Collateral):</span>
+              <span id="requiredIM" class="text-xl font-bold text-indigo-200">$0.00</span>
+            </div>
+
+            <!-- Execute -->
+            <button id="executeBtn"
+                    class="w-full py-4 text-xl font-bold rounded-lg bg-green-600 text-white hover:bg-green-700">
+              EXECUTE LONG LPS
+            </button>
+          </div>
+
+          <!-- Position section -->
+          <div id="positionSection" class="space-y-6 hidden">
+            <div id="positionHeader"
+                 class="p-4 rounded-xl text-white shadow-lg bg-green-700">
+              <p class="text-sm font-medium" id="positionSideText"></p>
+              <p id="positionTicker" class="text-3xl font-extrabold"></p>
+              <p class="text-sm">
+                Entry P: <span id="positionEntryP"></span> |
+                Notional: <span id="positionNotional"></span>
+              </p>
+            </div>
+
+            <div class="border border-gray-700 rounded-xl p-4 bg-gray-800">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-md font-semibold text-gray-400">Probability Difference (ΔP)</span>
+                <span id="deltaPText" class="text-4xl font-extrabold text-gray-500">0.0000 pts</span>
+              </div>
+
+              <div class="flex justify-between items-center border-t border-gray-700 pt-2 mt-4">
+                <span class="text-md font-semibold text-gray-400">Mark-to-Market P&L</span>
+                <span id="pnlText" class="text-2xl font-extrabold text-gray-500">$0.00</span>
+              </div>
+
+              <div class="space-y-2 text-sm text-gray-400 mt-4">
+                <div class="flex justify-between">
+                  <span>Initial Margin (IM) Locked:</span>
+                  <span id="positionIM" class="font-semibold text-yellow-500">$0.00</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>Current Equity in Position (IM + P&L):</span>
+                  <span id="equityText" class="font-semibold text-indigo-300">$0.00</span>
+                </div>
+                <div class="flex justify-between border-t border-gray-700 mt-2 pt-2">
+                  <span>Liquidation Threshold (10% IM):</span>
+                  <span id="liqThresholdText" class="font-semibold text-red-500">$0.00</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>Loss until Liquidation:</span>
+                  <span id="lossToLiqText" class="font-semibold text-red-400">$0.00</span>
+                </div>
+              </div>
+            </div>
+
+            <div id="marginWarning" class="hidden bg-yellow-900/40 text-yellow-300 p-3 rounded-lg border border-yellow-500">
+              Margin Call! Equity is nearing the Liquidation Threshold.
+            </div>
+
+            <div id="liquidationWarning" class="hidden bg-red-900/40 text-red-300 p-3 rounded-lg border border-red-500 animate-pulse-slow">
+              LIQUIDATED! Position closed automatically.
+            </div>
+
+            <button id="closePositionBtn"
+                    class="w-full py-4 text-xl font-bold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+              Close Position (Settle P&L)
+            </button>
+          </div>
+
+          <div class="mt-8 pt-4 border-t border-gray-700">
+            <p class="text-xs text-gray-600">
+              *Simple demo: IM buffer is 10% of Initial Margin. Liquidation when Equity drops below this level.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Plain JS logic -->
+  <script>
+    // Constants
     const STARTING_FUNDS = 500000;
     const MINIMUM_IM_REMAINING_PCT = 0.10;
     const MARGIN_CALL_TRIGGER_PCT = 0.20;
@@ -58,562 +252,325 @@
       { ticker: 'FED-HIKE-NOV', name: 'Fed Hikes Rate in November Meeting', initialP: 0.7500 }
     ];
 
-    const formatCurrency = (value) =>
-      '$' + value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const formatPercent = (value) => (value * 100).toFixed(2) + '%';
-    const formatProbabilityDifference = (value) => {
-      const sign = value >= 0 ? '+' : '';
-      return sign + (value * 100).toFixed(4);
-    };
+    // State
+    let accountFunds = STARTING_FUNDS;
+    let initialMarginUsed = 0;
+    let isMarginCall = false;
+    let isLiquidation = false;
 
-    const App = () => {
-      const [accountFunds, setAccountFunds] = useState(STARTING_FUNDS);
-      const [initialMarginUsed, setInitialMarginUsed] = useState(0);
-      const [isMarginCall, setIsMarginCall] = useState(false);
-      const [isLiquidation, setIsLiquidation] = useState(false);
+    let selectedMarket = MARKETS[0];
+    let side = 'LONG';
+    let notional = 100000;
+    let marginPct = 10;
+    let currentP = selectedMarket.initialP;
+    let probHistory = [currentP];
 
-      const [selectedMarket, setSelectedMarket] = useState(MARKETS[0]);
-      const [side, setSide] = useState('LONG');
-      const [notional, setNotional] = useState(100000);
-      const [marginPct, setMarginPct] = useState(10);
-      const [currentP, setCurrentP] = useState(selectedMarket.initialP);
-      const [chartData, setChartData] = useState([]);
-      const [position, setPosition] = useState(null);
+    let position = null; // {entryP, notional, side, isLong, initialMargin}
 
-      const simulatePriceMovement = useCallback((currentP) => {
-        const maxStep = 0.005;
-        const direction = Math.random() < 0.5 ? 1 : -1;
-        const change = Math.random() * maxStep * direction;
-        let newP = currentP + change;
+    // Helpers
+    function formatCurrency(v) {
+      return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function formatPercent(v) {
+      return (v * 100).toFixed(2) + '%';
+    }
+    function formatProbDiff(v) {
+      const sign = v >= 0 ? '+' : '';
+      return sign + (v * 100).toFixed(4);
+    }
 
-        if (newP > 0.99) newP = 0.99;
-        if (newP < 0.01) newP = 0.01;
+    function simulatePriceMovement(p) {
+      const maxStep = 0.005;
+      const direction = Math.random() < 0.5 ? 1 : -1;
+      const change = Math.random() * maxStep * direction;
+      let newP = p + change;
+      if (newP > 0.99) newP = 0.99;
+      if (newP < 0.01) newP = 0.01;
+      return parseFloat(newP.toFixed(4));
+    }
 
-        return parseFloat(newP.toFixed(4));
-      }, []);
+    function showMessage(msg) {
+      document.getElementById('messageBoxText').innerText = msg;
+      const box = document.getElementById('messageBox');
+      box.classList.remove('hidden');
+      box.classList.add('flex');
+    }
+    function hideMessage() {
+      const box = document.getElementById('messageBox');
+      box.classList.add('hidden');
+      box.classList.remove('flex');
+    }
 
-      const { pnl, liquidationThreshold, marginCallThreshold, probDifference } = useMemo(() => {
-        if (!position) return { pnl: 0, liquidationThreshold: 0, marginCallThreshold: 0, probDifference: 0 };
-
-        const deltaP = currentP - position.entryP;
-
-        const pnlResult = position.isLong
-          ? position.notional * deltaP
-          : position.notional * (-deltaP);
-
-        const liquidationThresholdValue = position.initialMargin * MINIMUM_IM_REMAINING_PCT;
-        const marginCallThresholdValue = position.initialMargin * MARGIN_CALL_TRIGGER_PCT;
-
-        return {
-          pnl: pnlResult,
-          liquidationThreshold: liquidationThresholdValue,
-          marginCallThreshold: marginCallThresholdValue,
-          probDifference: deltaP
-        };
-      }, [currentP, position]);
-
-      const currentEquityInPosition = initialMarginUsed + pnl;
+    // Rendering
+    function renderAccountSummary(pnl) {
+      const currentEquityInPosition = initialMarginUsed + (pnl || 0);
       const totalAccountValue = accountFunds + currentEquityInPosition;
-      const availableMargin = accountFunds;
-      const liquidFunds = accountFunds;
 
-      useEffect(() => {
-        if (position && !isLiquidation) {
-          if (currentEquityInPosition <= liquidationThreshold) {
-            handleLiquidation(currentEquityInPosition);
-          } else if (currentEquityInPosition <= marginCallThreshold) {
-            setIsMarginCall(true);
-          } else {
-            setIsMarginCall(false);
-          }
-        }
-      }, [currentEquityInPosition, liquidationThreshold, marginCallThreshold, position, isLiquidation]);
+      document.getElementById('totalAccountValue').innerText = formatCurrency(totalAccountValue);
+      document.getElementById('initialMarginUsed').innerText = formatCurrency(initialMarginUsed);
+      document.getElementById('liquidFunds').innerText = formatCurrency(accountFunds);
 
-      useEffect(() => {
-        setCurrentP(selectedMarket.initialP);
-        setChartData([{ time: 0, probability: selectedMarket.initialP * 100 }]);
+      const box = document.getElementById('marginStatusBox');
+      const text = document.getElementById('marginStatusText');
+      box.classList.remove('bg-green-600','bg-yellow-600','bg-red-700','border-green-400','border-yellow-400','border-red-500');
+      if (isLiquidation) {
+        box.classList.add('bg-red-700','border-red-500');
+        text.innerText = 'LIQUIDATED';
+      } else if (isMarginCall) {
+        box.classList.add('bg-yellow-600','border-yellow-400');
+        text.innerText = 'MARGIN CALL';
+      } else {
+        box.classList.add('bg-green-600','border-green-400');
+        text.innerText = 'HEALTHY';
+      }
+    }
 
-        let timeIndex = 0;
+    function renderMarket() {
+      document.getElementById('currentPText').innerText = formatPercent(currentP);
+      document.getElementById('marketTicker').innerText = selectedMarket.ticker;
+      document.getElementById('marketName').innerText = selectedMarket.name;
 
-        const interval = setInterval(() => {
-          setCurrentP(prevP => {
-            const newP = simulatePriceMovement(prevP);
+      const historyText = probHistory
+        .slice(-50)
+        .map((p, i) => `${String(probHistory.length - probHistory.slice(-50).length + i + 1).padStart(3,'0')}: ${(p*100).toFixed(2)}%`)
+        .join('\n');
+      document.getElementById('probHistory').innerText = historyText;
+    }
 
-            timeIndex++;
-            setChartData(prevData => {
-              const newData = [...prevData, { time: timeIndex, probability: newP * 100 }];
-              return newData.slice(-50);
-            });
+    function renderTradeEntry() {
+      // side buttons
+      const longBtn = document.getElementById('sideLongBtn');
+      const shortBtn = document.getElementById('sideShortBtn');
+      if (side === 'LONG') {
+        longBtn.classList.add('bg-green-600','text-white','glow-green');
+        longBtn.classList.remove('bg-gray-700','text-gray-300');
+        shortBtn.classList.remove('bg-red-600','text-white','glow-red');
+        shortBtn.classList.add('bg-gray-700','text-gray-300');
+      } else {
+        shortBtn.classList.add('bg-red-600','text-white','glow-red');
+        shortBtn.classList.remove('bg-gray-700','text-gray-300');
+        longBtn.classList.remove('bg-green-600','text-white','glow-green');
+        longBtn.classList.add('bg-gray-700','text-gray-300');
+      }
 
-            return newP;
-          });
-        }, 1500);
+      const requiredIM = notional * (marginPct / 100);
+      document.getElementById('requiredIM').innerText = formatCurrency(requiredIM);
+      const leverage = 1 / (marginPct / 100);
+      document.getElementById('leverageText').innerText =
+        'Leverage: ' + leverage.toFixed(2) + 'x (' + marginPct + '% IM)';
 
-        return () => clearInterval(interval);
-      }, [selectedMarket, simulatePriceMovement]);
+      const btn = document.getElementById('executeBtn');
+      btn.innerText = requiredIM > accountFunds ? 'Insufficient Funds' : `EXECUTE ${side} LPS`;
+      btn.disabled = requiredIM > accountFunds || position !== null;
+      if (btn.disabled) {
+        btn.classList.add('bg-gray-600','text-gray-400','cursor-not-allowed');
+        btn.classList.remove('bg-green-600','text-white');
+      } else {
+        btn.classList.remove('bg-gray-600','text-gray-400','cursor-not-allowed');
+        btn.classList.add('bg-green-600','text-white');
+      }
+    }
 
-      const showMessage = (message) => {
-        const box = document.getElementById('messageBox');
-        const text = document.getElementById('messageBoxText');
-        if (!box || !text) return;
-        text.innerText = message;
-        box.classList.add('flex');
-        box.classList.remove('hidden');
+    function renderPosition() {
+      const entrySection = document.getElementById('tradeEntrySection');
+      const posSection = document.getElementById('positionSection');
+      const marginWarning = document.getElementById('marginWarning');
+      const liqWarning = document.getElementById('liquidationWarning');
+
+      if (!position) {
+        entrySection.classList.remove('hidden');
+        posSection.classList.add('hidden');
+        marginWarning.classList.add('hidden');
+        liqWarning.classList.add('hidden');
+        renderTradeEntry();
+        return;
+      }
+
+      entrySection.classList.add('hidden');
+      posSection.classList.remove('hidden');
+
+      // P&L
+      const deltaP = currentP - position.entryP;
+      const pnl = position.isLong ? position.notional * deltaP : position.notional * (-deltaP);
+      const currentEquity = initialMarginUsed + pnl;
+      const liquidationThreshold = position.initialMargin * MINIMUM_IM_REMAINING_PCT;
+      const marginCallThreshold = position.initialMargin * MARGIN_CALL_TRIGGER_PCT;
+
+      // Header
+      document.getElementById('positionSideText').innerText =
+        'POSITION OPEN: ' + position.side;
+      document.getElementById('positionTicker').innerText = selectedMarket.ticker;
+      document.getElementById('positionEntryP').innerText = formatPercent(position.entryP);
+      document.getElementById('positionNotional').innerText = formatCurrency(position.notional);
+
+      const header = document.getElementById('positionHeader');
+      header.classList.remove('bg-green-700','bg-red-700');
+      header.classList.add(position.isLong ? 'bg-green-700' : 'bg-red-700');
+
+      // Numbers
+      const deltaText = formatProbDiff(deltaP);
+      document.getElementById('deltaPText').innerText = deltaText + ' pts';
+      const pnlSpan = document.getElementById('pnlText');
+      pnlSpan.innerText = formatCurrency(pnl);
+      pnlSpan.classList.remove('text-green-500','text-red-500','text-gray-500');
+      pnlSpan.classList.add(pnl > 0 ? 'text-green-500' : pnl < 0 ? 'text-red-500' : 'text-gray-500');
+
+      document.getElementById('positionIM').innerText = formatCurrency(position.initialMargin);
+      const equitySpan = document.getElementById('equityText');
+      equitySpan.innerText = formatCurrency(currentEquity);
+      equitySpan.classList.remove('text-indigo-300','text-red-500');
+      equitySpan.classList.add(currentEquity < liquidationThreshold ? 'text-red-500' : 'text-indigo-300');
+
+      document.getElementById('liqThresholdText').innerText = formatCurrency(liquidationThreshold);
+      document.getElementById('lossToLiqText').innerText =
+        formatCurrency(currentEquity - liquidationThreshold);
+
+      // Margin status
+      isMarginCall = currentEquity <= marginCallThreshold && currentEquity > liquidationThreshold;
+      marginWarning.classList.toggle('hidden', !isMarginCall);
+      liqWarning.classList.toggle('hidden', !isLiquidation);
+
+      renderAccountSummary(pnl);
+    }
+
+    function renderAll() {
+      renderMarket();
+      if (position) {
+        renderPosition();
+      } else {
+        renderAccountSummary(0);
+        renderTradeEntry();
+        renderPosition();
+      }
+    }
+
+    // Actions
+    function handleExecuteTrade() {
+      const requiredIM = notional * (marginPct / 100);
+      if (requiredIM > accountFunds) {
+        showMessage('Insufficient available funds to allocate Initial Margin for this position.');
+        return;
+      }
+      accountFunds -= requiredIM;
+      initialMarginUsed = requiredIM;
+      position = {
+        entryP: currentP,
+        notional: notional,
+        side: side,
+        isLong: side === 'LONG',
+        initialMargin: requiredIM
       };
+      isLiquidation = false;
+      isMarginCall = false;
+      renderAll();
+    }
 
-      const handleDismissMessage = () => {
-        const box = document.getElementById('messageBox');
-        if (!box) return;
-        box.classList.add('hidden');
-        box.classList.remove('flex');
-      };
+    function handleClosePosition() {
+      if (!position) return;
+      const deltaP = currentP - position.entryP;
+      const pnl = position.isLong ? position.notional * deltaP : position.notional * (-deltaP);
+      const currentEquity = initialMarginUsed + pnl;
+      accountFunds += currentEquity;
+      initialMarginUsed = 0;
+      position = null;
+      isMarginCall = false;
+      isLiquidation = false;
+      renderAll();
+    }
 
-      const handleExecuteTrade = () => {
-        const requiredIM = notional * (marginPct / 100);
-
-        if (requiredIM > availableMargin) {
-          showMessage("Insufficient available funds to allocate Initial Margin for this position.");
-          return;
-        }
-
-        setAccountFunds(prev => prev - requiredIM);
-        setInitialMarginUsed(requiredIM);
-
-        setPosition({
-          entryP: currentP,
-          notional,
-          side,
-          isLong: side === 'LONG',
-          initialMargin: requiredIM,
-        });
-        setIsLiquidation(false);
-      };
-
-      const handleCloseTrade = () => {
-        if (!position) return;
-
-        const netSettlement = currentEquityInPosition;
-
-        setAccountFunds(prev => prev + netSettlement);
-        setInitialMarginUsed(0);
-        setPosition(null);
-        setIsMarginCall(false);
-        setIsLiquidation(false);
-      };
-
-      const handleLiquidation = (finalEquity) => {
-        const lossApplied = position.initialMargin - finalEquity;
-        const remainingFunds = accountFunds + finalEquity;
-
-        setAccountFunds(remainingFunds);
-        setInitialMarginUsed(0);
-        setPosition(null);
-        setIsMarginCall(false);
-        setIsLiquidation(true);
-
-        showMessage(
-          `Position liquidated! Loss applied to funds: ${formatCurrency(lossApplied)}. ` +
-          `Remaining collateral returned: ${formatCurrency(finalEquity)}.`
-        );
-      };
-
-      const handleMarketChange = (e) => {
-        const newTicker = e.target.value;
-        const market = MARKETS.find(m => m.ticker === newTicker);
-        setSelectedMarket(market);
-      };
-
-      const handleNotionalChange = (e) =>
-        setNotional(Math.max(100, parseInt(e.target.value) || 0));
-
-      const handleMarginChange = (e) =>
-        setMarginPct(Math.max(5, Math.min(100, parseInt(e.target.value) || 0)));
-
-      const tradeButtonDisabled = notional <= 0 || marginPct <= 0 || !!position;
-      const currentIMRequired = notional * (marginPct / 100);
-      const pnlColor = pnl > 0 ? 'text-green-500' : pnl < 0 ? 'text-red-500' : 'text-gray-500';
-
-      const lossToLiquidation = position ? initialMarginUsed - liquidationThreshold : 0;
-      const lossToMarginCall = position ? initialMarginUsed - marginCallThreshold : 0;
-
-      return (
-        <>
-          {/* Message Box */}
-          <div
-            id="messageBox"
-            className="hidden fixed top-0 left-0 w-full h-full bg-black/70 z-50 justify-center items-center"
-          >
-            <div className="bg-gray-800 p-6 rounded-xl shadow-2xl border-2 border-yellow-500 max-w-sm text-center">
-              <p id="messageBoxText" className="text-xl text-white font-semibold mb-4"></p>
-              <button
-                onClick={handleDismissMessage}
-                className="bg-yellow-500 text-gray-900 font-bold py-2 px-4 rounded-lg hover:bg-yellow-400 transition"
-              >
-                Acknowledge
-              </button>
-            </div>
-          </div>
-
-          <div className="min-h-screen bg-gray-900 p-4 sm:p-8 font-sans text-gray-100">
-            <div className="max-w-7xl mx-auto">
-              <header className="mb-10 flex justify-between items-center border-b border-indigo-500/50 pb-4">
-                <h1 className="text-3xl sm:text-4xl font-extrabold text-indigo-400">
-                  Verslan <span className="text-gray-200">LPS Derivatives Dashboard</span>
-                </h1>
-                <p className="text-lg font-mono text-gray-500">BUBE Protocol</p>
-              </header>
-
-              {/* Account Summary */}
-              <div className="mb-8 p-6 rounded-xl shadow-2xl dashboard-card">
-                <h2 className="text-xl font-bold text-indigo-400 mb-4 flex items-center">
-                  <Icon>≡</Icon> Account Summary
-                </h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                  <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-                    <p className="text-sm text-gray-400">Total Account Value (Liquid + Position Equity)</p>
-                    <p className="text-2xl font-bold text-indigo-300">
-                      {formatCurrency(totalAccountValue)}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-                    <p className="text-sm text-gray-400">Initial Margin (IM) Locked</p>
-                    <p className="text-2xl font-bold text-yellow-500">
-                      {formatCurrency(initialMarginUsed)}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-                    <p className="text-sm text-gray-400">Liquid Funds Available</p>
-                    <p className={`text-2xl font-bold ${liquidFunds >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {formatCurrency(liquidFunds)}
-                    </p>
-                  </div>
-                  <div
-                    className={`p-3 rounded-lg border font-bold flex items-center justify-center ${
-                      isLiquidation
-                        ? 'bg-red-700 border-red-500 text-white animate-pulse-slow'
-                        : isMarginCall
-                        ? 'bg-yellow-600 border-yellow-400 text-gray-900'
-                        : 'bg-green-600 border-green-400 text-gray-900'
-                    }`}
-                  >
-                    {isLiquidation
-                      ? <>⚠ LIQUIDATED</>
-                      : isMarginCall
-                      ? <>⚠ MARGIN CALL</>
-                      : <>✔ HEALTHY</>}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left: Chart */}
-                <div className="lg:col-span-2 rounded-xl shadow-2xl p-6 dashboard-card">
-                  <h2 className="text-2xl font-bold text-gray-200 mb-4 flex items-center">
-                    <Icon>↗</Icon> Probability Index (P)
-                  </h2>
-
-                  <div className="mb-4">
-                    <label
-                      htmlFor="market-select"
-                      className="block text-sm font-medium text-gray-400"
-                    >
-                      Underlying Prediction Market:
-                    </label>
-                    <div className="mt-1 relative">
-                      <select
-                        id="market-select"
-                        name="market-select"
-                        className="block w-full pl-3 pr-10 py-3 text-lg border-gray-700 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-lg rounded-lg appearance-none cursor-pointer bg-gray-800 text-gray-200"
-                        value={selectedMarket.ticker}
-                        onChange={handleMarketChange}
-                        disabled={!!position}
-                      >
-                        {MARKETS.map((market) => (
-                          <option key={market.ticker} value={market.ticker}>
-                            {market.ticker}: {market.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="bg-indigo-900/40 p-5 rounded-xl mb-6 flex justify-between items-center border border-indigo-700">
-                    <div>
-                      <p className="text-sm font-medium text-indigo-400">
-                        Current Probability Index (P<sub className='text-md'>current</sub>)
-                      </p>
-                      <p className="text-6xl font-extrabold text-indigo-300">
-                        {formatPercent(currentP)}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500">Event:</p>
-                      <p className="text-xl font-semibold text-gray-200">{selectedMarket.ticker}</p>
-                      <p className="text-sm text-gray-400">{selectedMarket.name}</p>
-                    </div>
-                  </div>
-
-                  <div className="h-96 w-full bg-gray-800 rounded-lg p-4">
-                    <p className="text-sm font-medium text-gray-400 mb-2">
-                      Probability Index (P) Movement (Last 50 Ticks)
-                    </p>
-                    <ResponsiveContainer width="100%" height="95%">
-                      <LineChart
-                        data={chartData}
-                        margin={{ top: 5, right: 10, left: -20, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" hide />
-                        <YAxis
-                          domain={[1, 99]}
-                          tickFormatter={(value) => value + '%'}
-                          stroke="#9ca3af"
-                          label={{
-                            value: 'Probability (%)',
-                            angle: -90,
-                            position: 'insideLeft',
-                            fill: '#9ca3af'
-                          }}
-                        />
-                        <Tooltip
-                          formatter={(value) => [value.toFixed(2) + '%', 'Probability']}
-                          labelFormatter={(label) => 'Tick ' + label}
-                          contentStyle={{
-                            backgroundColor: '#1f2937',
-                            border: '1px solid #4b5563',
-                            borderRadius: '8px',
-                            color: '#fff'
-                          }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="probability"
-                          stroke="#6366f1"
-                          strokeWidth={2}
-                          dot={false}
-                          activeDot={{ r: 5, fill: '#6366f1' }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Right: Trade panel */}
-                <div className="lg:col-span-1 rounded-xl shadow-2xl p-6 dashboard-card">
-                  <h2 className="text-2xl font-bold text-gray-200 mb-6 flex items-center">
-                    <Icon>$</Icon> LPS Trade Terminal
-                  </h2>
-
-                  {!position ? (
-                    <div className="space-y-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">
-                          Trade Side
-                        </label>
-                        <div className="flex space-x-4">
-                          <button
-                            onClick={() => setSide('LONG')}
-                            className={`flex-1 py-3 px-4 rounded-lg font-semibold transition duration-200 shadow-md ${
-                              side === 'LONG'
-                                ? 'bg-green-600 text-white hover:bg-green-700 glow-green'
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
-                          >
-                            LONG (YES)
-                          </button>
-                          <button
-                            onClick={() => setSide('SHORT')}
-                            className={`flex-1 py-3 px-4 rounded-lg font-semibold transition duration-200 shadow-md ${
-                              side === 'SHORT'
-                                ? 'bg-red-600 text-white hover:bg-red-700 glow-red'
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
-                          >
-                            SHORT (NO)
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label htmlFor="notional" className="block text-sm font-medium text-gray-400">
-                          Notional Value (N)
-                        </label>
-                        <input
-                          type="number"
-                          id="notional"
-                          value={notional}
-                          onChange={handleNotionalChange}
-                          placeholder="100000"
-                          className="mt-1 block w-full border border-gray-700 rounded-lg shadow-sm p-3 focus:ring-indigo-500 focus:border-indigo-500 text-lg bg-gray-800 text-gray-200"
-                          min="100"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          Contract size. P&L = N ⋅ ΔP.
-                        </p>
-                      </div>
-
-                      <div>
-                        <label htmlFor="marginPct" className="block text-sm font-medium text-gray-400">
-                          Initial Margin Percentage (IM%)
-                        </label>
-                        <div className="relative mt-1">
-                          <input
-                            type="number"
-                            id="marginPct"
-                            value={marginPct}
-                            onChange={handleMarginChange}
-                            placeholder="10"
-                            className="block w-full border border-gray-700 rounded-lg shadow-sm p-3 pr-12 focus:ring-indigo-500 focus:border-indigo-500 text-lg bg-gray-800 text-gray-200"
-                            min="5"
-                            max="100"
-                          />
-                          <span className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 font-semibold">
-                            %
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Leverage: {formatPercent(1 / (marginPct / 100))} (10% IM = 10x leverage).
-                        </p>
-                      </div>
-
-                      <div className="bg-indigo-800/40 p-4 rounded-lg flex justify-between border border-indigo-700">
-                        <span className="text-md font-medium text-indigo-300">
-                          Required IM (Collateral):
-                        </span>
-                        <span className="text-xl font-bold text-indigo-200">
-                          {formatCurrency(currentIMRequired)}
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={handleExecuteTrade}
-                        disabled={tradeButtonDisabled || currentIMRequired > liquidFunds}
-                        className={`w-full py-4 text-xl font-bold rounded-lg transition duration-300 shadow-lg ${
-                          tradeButtonDisabled || currentIMRequired > liquidFunds
-                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                            : side === 'LONG'
-                            ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
-                            : 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800'
-                        }`}
-                      >
-                        {currentIMRequired > liquidFunds
-                          ? 'Insufficient Funds'
-                          : `EXECUTE ${side} LPS`}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      <div
-                        className={`p-4 rounded-xl text-white shadow-lg ${
-                          position.isLong ? 'bg-green-700' : 'bg-red-700'
-                        }`}
-                      >
-                        <p className="text-sm font-medium">
-                          POSITION OPEN: {position.side}
-                        </p>
-                        <p className="text-3xl font-extrabold">{selectedMarket.ticker}</p>
-                        <p className="text-sm">
-                          Entry P: {formatPercent(position.entryP)} | Notional:{' '}
-                          {formatCurrency(position.notional)}
-                        </p>
-                      </div>
-
-                      <div className="border border-gray-700 rounded-xl p-4 bg-gray-800">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-md font-semibold text-gray-400">
-                            Probability Difference (ΔP)
-                          </span>
-                          <span className={`text-4xl font-extrabold ${pnlColor}`}>
-                            {formatProbabilityDifference(probDifference)} pts
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between items-center border-t border-gray-700 pt-2 mt-4">
-                          <span className="text-md font-semibold text-gray-400">
-                            Mark-to-Market P&L (N ⋅ ΔP)
-                          </span>
-                          <span className={`text-2xl font-extrabold ${pnlColor}`}>
-                            {formatCurrency(pnl)}
-                          </span>
-                        </div>
-
-                        <div className="space-y-2 text-sm text-gray-400 mt-4">
-                          <div className="flex justify-between">
-                            <span>Initial Margin (IM) Locked:</span>
-                            <span className="font-semibold text-yellow-500">
-                              {formatCurrency(position.initialMargin)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Current Equity in Position (IM + P&L):</span>
-                            <span
-                              className={`font-semibold ${
-                                currentEquityInPosition < liquidationThreshold
-                                  ? 'text-red-500'
-                                  : 'text-indigo-300'
-                              }`}
-                            >
-                              {formatCurrency(currentEquityInPosition)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between border-t border-gray-700 mt-2 pt-2">
-                            <span>Liquidation Threshold (10% IM Buffer):</span>
-                            <span className="font-semibold text-red-500">
-                              {formatCurrency(liquidationThreshold)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Loss until Liquidation:</span>
-                            <span className="font-semibold text-red-400">
-                              {formatCurrency(currentEquityInPosition - liquidationThreshold)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {isLiquidation ? (
-                        <div className="bg-red-900/40 text-red-300 p-3 rounded-lg flex items-center border border-red-500 animate-pulse-slow">
-                          <span className="mr-2">⚠</span>
-                          <span className="font-bold">
-                            LIQUIDATED! Position closed automatically.
-                          </span>
-                        </div>
-                      ) : (
-                        isMarginCall && (
-                          <div className="bg-yellow-900/40 text-yellow-300 p-3 rounded-lg flex items-center border border-yellow-500">
-                            <span className="mr-2">⚠</span>
-                            <span className="font-medium">
-                              Margin Call! Equity is nearing the Liquidation Threshold.
-                            </span>
-                          </div>
-                        )
-                      )}
-
-                      <button
-                        onClick={handleCloseTrade}
-                        className="w-full py-4 text-xl font-bold rounded-lg transition duration-300 shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 active:bg-indigo-800"
-                      >
-                        Close Position (Settle P&L)
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="mt-8 pt-4 border-t border-gray-700">
-                    <p className="text-xs text-gray-600">
-                      *IM Buffer is set at 10% of Initial Margin. Liquidation occurs when
-                      Equity in Position drops below this threshold.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
+    function handleLiquidation(finalEquity) {
+      const lossApplied = position.initialMargin - finalEquity;
+      accountFunds += finalEquity;
+      initialMarginUsed = 0;
+      position = null;
+      isMarginCall = false;
+      isLiquidation = true;
+      showMessage(
+        'Position liquidated! Loss applied to funds: ' +
+        formatCurrency(lossApplied) +
+        '. Remaining collateral returned: ' +
+        formatCurrency(finalEquity) + '.'
       );
-    };
+      renderAll();
+    }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    // Price tick loop
+    setInterval(function () {
+      currentP = simulatePriceMovement(currentP);
+      probHistory.push(currentP);
+
+      if (position) {
+        const deltaP = currentP - position.entryP;
+        const pnl = position.isLong ? position.notional * deltaP : position.notional * (-deltaP);
+        const currentEquity = initialMarginUsed + pnl;
+        const liquidationThreshold = position.initialMargin * MINIMUM_IM_REMAINING_PCT;
+        const marginCallThreshold = position.initialMargin * MARGIN_CALL_TRIGGER_PCT;
+
+        if (!isLiquidation && currentEquity <= liquidationThreshold) {
+          handleLiquidation(currentEquity);
+          return;
+        } else {
+          isMarginCall = currentEquity <= marginCallThreshold && currentEquity > liquidationThreshold;
+        }
+      }
+
+      renderAll();
+    }, 1500);
+
+    // Event listeners
+    document.getElementById('messageBoxClose').addEventListener('click', hideMessage);
+
+    document.getElementById('sideLongBtn').addEventListener('click', function () {
+      side = 'LONG';
+      renderTradeEntry();
+    });
+    document.getElementById('sideShortBtn').addEventListener('click', function () {
+      side = 'SHORT';
+      renderTradeEntry();
+    });
+
+    document.getElementById('notionalInput').addEventListener('input', function (e) {
+      const v = parseInt(e.target.value) || 0;
+      notional = Math.max(100, v);
+      e.target.value = notional;
+      renderTradeEntry();
+    });
+
+    document.getElementById('marginInput').addEventListener('input', function (e) {
+      const v = parseInt(e.target.value) || 0;
+      marginPct = Math.max(5, Math.min(100, v));
+      e.target.value = marginPct;
+      renderTradeEntry();
+    });
+
+    document.getElementById('executeBtn').addEventListener('click', handleExecuteTrade);
+    document.getElementById('closePositionBtn').addEventListener('click', handleClosePosition);
+
+    document.getElementById('marketSelect').addEventListener('change', function (e) {
+      const ticker = e.target.value;
+      selectedMarket = MARKETS.find(m => m.ticker === ticker) || MARKETS[0];
+      currentP = selectedMarket.initialP;
+      probHistory = [currentP];
+      renderAll();
+    });
+
+    // Init select options
+    (function init() {
+      const select = document.getElementById('marketSelect');
+      MARKETS.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.ticker;
+        opt.textContent = m.ticker + ': ' + m.name;
+        select.appendChild(opt);
+      });
+      select.value = selectedMarket.ticker;
+
+      accountFunds = STARTING_FUNDS;
+      initialMarginUsed = 0;
+      probHistory = [currentP];
+
+      renderAll();
+    })();
   </script>
 </body>
 </html>
