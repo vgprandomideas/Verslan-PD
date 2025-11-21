@@ -1,0 +1,611 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { DollarSign, TrendingUp, TrendingDown, LayoutDashboard, AlertTriangle, CheckCircle, RefreshCw, ChevronDown } from 'lucide-react';
+
+// --- BNS: Imports & Constants ---
+
+// Initial starting capital
+const STARTING_FUNDS = 500000; // $500,000 for an institutional simulation
+// The percentage of the Initial Margin (IM) that must remain as Equity to avoid liquidation.
+// Setting this to 10% means a maximum loss of 90% of the IM is allowed before liquidation.
+const MINIMUM_IM_REMAINING_PCT = 0.10; 
+// Margin Call Trigger: Equity drops below 20% of IM remaining.
+const MARGIN_CALL_TRIGGER_PCT = 0.20;
+
+// Define the structure for multiple markets
+const MARKETS = [
+  { 
+    ticker: 'BTC-100K', 
+    name: 'Bitcoin > $100k (Dec 31, 2026)', 
+    initialP: 0.6250, 
+  },
+  { 
+    ticker: 'TRUMP-ELEC', 
+    name: 'Trump Wins US Presidential Election 2028', 
+    initialP: 0.4800, 
+  },
+  { 
+    ticker: 'FED-HIKE-NOV', 
+    name: 'Fed Hikes Rate in November Meeting', 
+    initialP: 0.7500, 
+  }
+];
+
+// Utility function to format currencies and percentages
+const formatCurrency = (value) => `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
+const formatProbabilityDifference = (value) => {
+    const sign = value >= 0 ? '+' : '';
+    return `${sign}${(value * 100).toFixed(4)}`;
+};
+
+// --- The Main LPS Calculator Component ---
+
+const App = () => {
+  // N: Account State Management
+  const [accountFunds, setAccountFunds] = useState(STARTING_FUNDS);
+  const [initialMarginUsed, setInitialMarginUsed] = useState(0);
+  const [isMarginCall, setIsMarginCall] = useState(false);
+  const [isLiquidation, setIsLiquidation] = useState(false);
+
+  // N: Market and Trade State
+  const [selectedMarket, setSelectedMarket] = useState(MARKETS[0]);
+  const [side, setSide] = useState('LONG');
+  const [notional, setNotional] = useState(100000); 
+  const [marginPct, setMarginPct] = useState(10); // IM%
+  const [currentP, setCurrentP] = useState(selectedMarket.initialP);
+  const [chartData, setChartData] = useState([]);
+  const [position, setPosition] = useState(null);
+
+  // Function to simulate price (probability) movement
+  const simulatePriceMovement = useCallback((currentP) => {
+    const maxStep = 0.005; 
+    const direction = Math.random() < 0.5 ? 1 : -1;
+    const change = Math.random() * maxStep * direction;
+    let newP = currentP + change;
+    
+    if (newP > 0.99) newP = 0.99;
+    if (newP < 0.01) newP = 0.01;
+    
+    return parseFloat(newP.toFixed(4));
+  }, []);
+
+  // S: Core P&L Calculation and Margin Metrics
+  const { pnl, liquidationThreshold, marginCallThreshold, probDifference } = useMemo(() => {
+    if (!position) return { pnl: 0, liquidationThreshold: 0, marginCallThreshold: 0, probDifference: 0 };
+    
+    // P&L = N * (P_current - P_entry) -> This is the Probability Difference (Delta P)
+    const deltaP = currentP - position.entryP;
+    
+    const pnlResult = position.isLong 
+      ? position.notional * deltaP 
+      : position.notional * (-deltaP);
+      
+    // Liquidation Threshold (MM) is the absolute minimum account equity required.
+    // It is set to MINIMUM_IM_REMAINING_PCT of the Initial Margin.
+    const liquidationThresholdValue = position.initialMargin * MINIMUM_IM_REMAINING_PCT; 
+    
+    // Margin Call is triggered when equity drops close to the liquidation level, e.g., 20% above the MM level.
+    const marginCallThresholdValue = position.initialMargin * MARGIN_CALL_TRIGGER_PCT;
+    
+    return { 
+      pnl: pnlResult, 
+      liquidationThreshold: liquidationThresholdValue, 
+      marginCallThreshold: marginCallThresholdValue, 
+      probDifference: deltaP 
+    };
+  }, [currentP, position]);
+
+  // Total Equity includes the initial collateral (IM) and the P&L applied to that collateral
+  // Equity is the current value of the collateral backing the trade.
+  const currentEquityInPosition = initialMarginUsed + pnl;
+  const totalAccountValue = accountFunds + currentEquityInPosition;
+  const availableMargin = accountFunds; // Funds available for new collateral (IM)
+
+  // Check for Margin Call and Liquidation
+  useEffect(() => {
+    if (position && !isLiquidation) {
+        if (currentEquityInPosition <= liquidationThreshold) {
+            handleLiquidation(currentEquityInPosition);
+        } else if (currentEquityInPosition <= marginCallThreshold) {
+            setIsMarginCall(true);
+        } else {
+            setIsMarginCall(false);
+        }
+    }
+  }, [currentEquityInPosition, liquidationThreshold, marginCallThreshold, position, isLiquidation]);
+
+  // B: Simulation Effect (Price Index Ticks)
+  useEffect(() => {
+    // Reset state when market changes
+    setCurrentP(selectedMarket.initialP);
+    setChartData([{ time: 0, probability: selectedMarket.initialP * 100 }]);
+    
+    let timeIndex = 0;
+
+    const interval = setInterval(() => {
+      setCurrentP(prevP => {
+        const newP = simulatePriceMovement(prevP);
+        
+        timeIndex++;
+        setChartData(prevData => {
+          const newData = [...prevData, { time: timeIndex, probability: newP * 100 }];
+          return newData.slice(-50);
+        });
+        
+        return newP;
+      });
+    }, 1500); 
+
+    return () => clearInterval(interval);
+  }, [selectedMarket, simulatePriceMovement]); 
+
+  // B: Trade Execution Handlers
+  const handleExecuteTrade = () => {
+    const requiredIM = notional * (marginPct / 100);
+    
+    if (requiredIM > availableMargin) {
+      // Use custom alert box instead of native alert()
+      showMessage("Insufficient available funds to allocate Initial Margin for this position.");
+      return;
+    }
+    
+    // Lock IM from available funds and set position
+    setAccountFunds(prev => prev - requiredIM); // Reduce available funds
+    setInitialMarginUsed(requiredIM); // Increase locked IM
+    
+    setPosition({
+      entryP: currentP,
+      notional,
+      side,
+      isLong: side === 'LONG',
+      initialMargin: requiredIM, // Store IM with the position
+    });
+    setIsLiquidation(false); // Reset liquidation status
+  };
+
+  const handleCloseTrade = () => {
+    if (!position) return;
+    
+    // Settle P&L: IM is returned + Net P&L (which is already accounted for in currentEquityInPosition)
+    // The total value of the collateral (IM + P&L) is added back to the liquid funds.
+    const netSettlement = currentEquityInPosition;
+    
+    setAccountFunds(prev => prev + netSettlement); // Return collateral + P&L to liquid funds
+    setInitialMarginUsed(0);
+    setPosition(null);
+    setIsMarginCall(false);
+    setIsLiquidation(false);
+  };
+  
+  const handleLiquidation = (finalEquity) => {
+    // Loss absorbed by the collateral is: IM - finalEquity (the remaining fraction of collateral)
+    const lossApplied = position.initialMargin - finalEquity;
+    
+    // Liquidation means the remaining finalEquity is added back to funds, 
+    // and the loss is realized (it's already realized in 'accountFunds' when we calculate 'currentEquityInPosition').
+    // Since 'currentEquityInPosition' is already tracking the P&L, 
+    // we return the 'finalEquity' and zero out the 'initialMarginUsed'.
+
+    const remainingFunds = accountFunds + finalEquity;
+    
+    setAccountFunds(remainingFunds); 
+    setInitialMarginUsed(0);
+    setPosition(null);
+    setIsMarginCall(false);
+    setIsLiquidation(true);
+    
+    showMessage(`Position liquidated! Loss applied to funds: ${formatCurrency(lossApplied)}. Remaining collateral returned: ${formatCurrency(finalEquity)}.`);
+  };
+  
+  const showMessage = (message) => {
+    document.getElementById('messageBoxText').innerText = message;
+    document.getElementById('messageBox').classList.add('flex');
+    document.getElementById('messageBox').classList.remove('hidden');
+  };
+  
+  const handleDismissMessage = () => {
+    document.getElementById('messageBox').classList.add('hidden');
+    document.getElementById('messageBox').classList.remove('flex');
+  };
+
+  // Other Handlers
+  const handleMarketChange = (e) => {
+    const newTicker = e.target.value;
+    const market = MARKETS.find(m => m.ticker === newTicker);
+    setSelectedMarket(market);
+  };
+  
+  const handleNotionalChange = (e) => setNotional(Math.max(100, parseInt(e.target.value) || 0));
+  const handleMarginChange = (e) => setMarginPct(Math.max(5, Math.min(100, parseInt(e.target.value) || 0)));
+  const tradeButtonDisabled = notional <= 0 || marginPct <= 0 || !!position; // Disabled if position is open
+
+  const currentIMRequired = notional * (marginPct / 100);
+  const pnlColor = pnl > 0 ? 'text-green-500' : pnl < 0 ? 'text-red-500' : 'text-gray-500';
+
+  // Calculate the amount of loss that triggers liquidation
+  const lossToLiquidation = position ? initialMarginUsed - liquidationThreshold : 0;
+  const lossToMarginCall = position ? initialMarginUsed - marginCallThreshold : 0;
+  
+  // Available to Trade is the liquid funds
+  const liquidFunds = accountFunds;
+
+
+  return (
+    <div className="min-h-screen bg-gray-900 p-4 sm:p-8 font-sans text-gray-100">
+      <script src="https://cdn.tailwindcss.com"></script>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        .font-sans { font-family: 'Inter', sans-serif; }
+        .dashboard-card { background-color: #1f2937; border: 1px solid #374151; }
+        .glow-green { box-shadow: 0 0 15px rgba(34, 197, 94, 0.5); }
+        .glow-red { box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
+        .animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+      `}</style>
+      
+      {/* Custom Message Box for Alerts */}
+      <div id="messageBox" className="hidden fixed top-0 left-0 w-full h-full bg-black/70 z-50 justify-center items-center">
+        <div className="bg-gray-800 p-6 rounded-xl shadow-2xl border-2 border-yellow-500 max-w-sm text-center">
+          <p id="messageBoxText" className="text-xl text-white font-semibold mb-4"></p>
+          <button 
+            onClick={handleDismissMessage}
+            className="bg-yellow-500 text-gray-900 font-bold py-2 px-4 rounded-lg hover:bg-yellow-400 transition"
+          >
+            Acknowledge
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto">
+        <header className="mb-10 flex justify-between items-center border-b border-indigo-500/50 pb-4">
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-indigo-400">
+            Verslan <span className="text-gray-200">LPS Derivatives Dashboard</span>
+          </h1>
+          <p className="text-lg font-mono text-gray-500">BUBE Protocol</p>
+        </header>
+        
+        {/* N: Account Summary Panel */}
+        <div className="mb-8 p-6 rounded-xl shadow-2xl dashboard-card">
+          <h2 className="text-xl font-bold text-indigo-400 mb-4 flex items-center">
+            <LayoutDashboard className="w-5 h-5 mr-2" /> Account Summary
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+            
+            {/* 1. Total Account Value */}
+            <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+              <p className="text-sm text-gray-400">Total Account Value (Liquid + Position Equity)</p>
+              <p className="text-2xl font-bold text-indigo-300">
+                {formatCurrency(totalAccountValue)}
+              </p>
+            </div>
+            
+            {/* 2. Used Initial Margin (Collateral Value) */}
+            <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+              <p className="text-sm text-gray-400">Initial Margin (IM) Locked</p>
+              <p className="text-2xl font-bold text-yellow-500">
+                {formatCurrency(initialMarginUsed)}
+              </p>
+            </div>
+            
+            {/* 3. Liquid Funds Available for New Trades */}
+            <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+              <p className="text-sm text-gray-400">Liquid Funds Available</p>
+              <p className={`text-2xl font-bold ${liquidFunds >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {formatCurrency(liquidFunds)}
+              </p>
+            </div>
+
+            {/* 4. Margin Status */}
+            <div className={`p-3 rounded-lg border font-bold flex items-center justify-center ${
+              isLiquidation ? 'bg-red-700 border-red-500 text-white animate-pulse-slow' :
+              isMarginCall ? 'bg-yellow-600 border-yellow-400 text-gray-900' :
+              'bg-green-600 border-green-400 text-gray-900'
+            }`}>
+              {isLiquidation ? (
+                <><AlertTriangle className="w-5 h-5 mr-2" /> LIQUIDATED</>
+              ) : isMarginCall ? (
+                <><AlertTriangle className="w-5 h-5 mr-2" /> MARGIN CALL (20% IM Buffer)</>
+              ) : (
+                <><CheckCircle className="w-5 h-5 mr-2" /> HEALTHY</>
+              )}
+            </div>
+
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* --- LEFT COLUMN: Market & Chart Panel --- */}
+          <div className="lg:col-span-2 rounded-xl shadow-2xl p-6 dashboard-card">
+            <h2 className="text-2xl font-bold text-gray-200 mb-4 flex items-center">
+              <TrendingUp className="w-6 h-6 mr-2 text-indigo-400" /> Probability Index (P)
+            </h2>
+            
+            {/* Market Selection Dropdown */}
+            <div className="mb-4">
+              <label htmlFor="market-select" className="block text-sm font-medium text-gray-400">
+                Underlying Prediction Market Source (Polymarket/Kalshi Feed):
+              </label>
+              <div className="mt-1 relative">
+                <select
+                  id="market-select"
+                  name="market-select"
+                  className="block w-full pl-3 pr-10 py-3 text-lg border-gray-700 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-lg rounded-lg appearance-none cursor-pointer bg-gray-800 text-gray-200"
+                  value={selectedMarket.ticker}
+                  onChange={handleMarketChange}
+                  disabled={!!position}
+                >
+                  {MARKETS.map((market) => (
+                    <option key={market.ticker} value={market.ticker}>
+                      {market.ticker}: {market.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                  <ChevronDown className="h-5 w-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Current Probability Index (P_current) */}
+            <div className="bg-indigo-900/40 p-5 rounded-xl mb-6 flex justify-between items-center border border-indigo-700">
+              <div>
+                <p className="text-sm font-medium text-indigo-400">Current Probability Index (P<sub className='text-md'>current</sub>)</p>
+                <p className="text-6xl font-extrabold text-indigo-300">
+                  {formatPercent(currentP)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-500">Event:</p>
+                <p className="text-xl font-semibold text-gray-200">{selectedMarket.ticker}</p>
+                <p className="text-sm text-gray-400">{selectedMarket.name}</p>
+              </div>
+            </div>
+
+            {/* Probability Index Chart */}
+            <div className="h-96 w-full bg-gray-800 rounded-lg p-4">
+              <p className="text-sm font-medium text-gray-400 mb-2">
+                Probability Index (P) Movement (Last 50 Ticks)
+              </p>
+              <ResponsiveContainer width="100%" height="95%">
+                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="time" hide />
+                  <YAxis 
+                    domain={[1, 99]} 
+                    tickFormatter={(value) => `${value}%`} 
+                    label={{ value: 'Probability (%)', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
+                    stroke="#9ca3af"
+                  />
+                  <Tooltip 
+                    formatter={(value) => [`${value.toFixed(2)}%`, 'Probability']}
+                    labelFormatter={(label) => `Tick ${label}`}
+                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563', borderRadius: '8px', color: '#fff' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="probability" 
+                    stroke="#6366f1" 
+                    strokeWidth={2} 
+                    dot={false}
+                    activeDot={{ r: 5, fill: '#6366f1' }}
+                  />
+                  {position && (
+                    <Line
+                      type="monotone"
+                      dataKey="entryP_line"
+                      stroke="#f97316"
+                      strokeWidth={1}
+                      strokeDasharray="5 5"
+                      dot={false}
+                      data={[{ time: 0, entryP_line: position.entryP * 100 }, ...chartData]}
+                      isAnimationActive={false}
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+              {position && (
+                <p className="text-xs text-gray-500 text-center mt-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1"></span> 
+                  Entry Price (P<sub className='text-xs'>entry</sub>) is at {formatPercent(position.entryP)}.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* --- RIGHT COLUMN: Trade Panel --- */}
+          <div className="lg:col-span-1 rounded-xl shadow-2xl p-6 dashboard-card">
+            <h2 className="text-2xl font-bold text-gray-200 mb-6 flex items-center">
+              <DollarSign className="w-6 h-6 mr-2 text-green-500" /> LPS Trade Terminal
+            </h2>
+
+            {/* Trade Entry Panel */}
+            {!position ? (
+              <div className="space-y-6">
+                
+                {/* 1. Side Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-2">Trade Side</label>
+                  <div className="flex space-x-4">
+                    <button
+                      onClick={() => setSide('LONG')}
+                      className={`flex-1 py-3 px-4 rounded-lg font-semibold transition duration-200 shadow-md ${
+                        side === 'LONG'
+                          ? 'bg-green-600 text-white hover:bg-green-700 glow-green'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      <TrendingUp className="w-4 h-4 inline mr-2" /> LONG (YES)
+                    </button>
+                    <button
+                      onClick={() => setSide('SHORT')}
+                      className={`flex-1 py-3 px-4 rounded-lg font-semibold transition duration-200 shadow-md ${
+                        side === 'SHORT'
+                          ? 'bg-red-600 text-white hover:bg-red-700 glow-red'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      <TrendingDown className="w-4 h-4 inline mr-2" /> SHORT (NO)
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Notional Value */}
+                <div>
+                  <label htmlFor="notional" className="block text-sm font-medium text-gray-400">
+                    Notional Value (N)
+                  </label>
+                  <input
+                    type="number"
+                    id="notional"
+                    value={notional}
+                    onChange={handleNotionalChange}
+                    placeholder="100000"
+                    className="mt-1 block w-full border border-gray-700 rounded-lg shadow-sm p-3 focus:ring-indigo-500 focus:border-indigo-500 text-lg bg-gray-800 text-gray-200"
+                    min="100"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Contract size. P&L = N ⋅ ΔP.
+                  </p>
+                </div>
+
+                {/* 3. Initial Margin Percentage */}
+                <div>
+                  <label htmlFor="marginPct" className="block text-sm font-medium text-gray-400">
+                    Initial Margin Percentage (IM%)
+                  </label>
+                  <div className="relative mt-1">
+                    <input
+                      type="number"
+                      id="marginPct"
+                      value={marginPct}
+                      onChange={handleMarginChange}
+                      placeholder="10"
+                      className="block w-full border border-gray-700 rounded-lg shadow-sm p-3 pr-12 focus:ring-indigo-500 focus:border-indigo-500 text-lg bg-gray-800 text-gray-200"
+                      min="5"
+                      max="100"
+                    />
+                    <span className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 font-semibold">%</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Leverage: {formatPercent(1/ (marginPct/100))} (10% IM = 10x leverage).
+                  </p>
+                </div>
+
+                {/* Required Margin Display */}
+                <div className="bg-indigo-800/40 p-4 rounded-lg flex justify-between border border-indigo-700">
+                  <span className="text-md font-medium text-indigo-300">Required IM (Collateral):</span>
+                  <span className="text-xl font-bold text-indigo-200">{formatCurrency(currentIMRequired)}</span>
+                </div>
+
+                {/* Execute Button */}
+                <button
+                  onClick={handleExecuteTrade}
+                  disabled={tradeButtonDisabled || currentIMRequired > liquidFunds}
+                  className={`w-full py-4 text-xl font-bold rounded-lg transition duration-300 shadow-lg ${
+                    tradeButtonDisabled || currentIMRequired > liquidFunds
+                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                      : side === 'LONG' 
+                        ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800' 
+                        : 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800'
+                  }`}
+                >
+                  {currentIMRequired > liquidFunds ? 'Insufficient Funds' : `EXECUTE ${side} LPS`}
+                </button>
+              </div>
+            ) : (
+              // --- Trade Open Panel ---
+              <div className="space-y-6">
+                <div className={`p-4 rounded-xl text-white shadow-lg ${position.isLong ? 'bg-green-700' : 'bg-red-700'}`}>
+                    <p className="text-sm font-medium">POSITION OPEN: {position.side}</p>
+                    <p className="text-3xl font-extrabold">{selectedMarket.ticker}</p>
+                    <p className="text-sm">Entry P: {formatPercent(position.entryP)} | Notional: {formatCurrency(position.notional)}</p>
+                </div>
+                
+                {/* Real-time P&L Display */}
+                <div className="border border-gray-700 rounded-xl p-4 bg-gray-800">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-md font-semibold text-gray-400 flex items-center">
+                            <RefreshCw className="w-4 h-4 mr-2 text-indigo-500" /> Probability Difference (ΔP)
+                        </span>
+                        <span className={`text-4xl font-extrabold ${pnlColor}`}>
+                            {formatProbabilityDifference(probDifference)} pts
+                        </span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center border-t border-gray-700 pt-2 mt-4">
+                        <span className="text-md font-semibold text-gray-400 flex items-center">
+                            Mark-to-Market P&L (N ⋅ ΔP)
+                        </span>
+                        <span className={`text-2xl font-extrabold ${pnlColor}`}>
+                            {formatCurrency(pnl)}
+                        </span>
+                    </div>
+
+                    <div className="space-y-2 text-sm text-gray-400 mt-4">
+                      <div className="flex justify-between">
+                          <span>Initial Margin (IM) Locked:</span>
+                          <span className="font-semibold text-yellow-500">{formatCurrency(position.initialMargin)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span>Current Equity in Position (IM + P&L):</span>
+                          <span className={`font-semibold ${currentEquityInPosition < liquidationThreshold ? 'text-red-500' : 'text-indigo-300'}`}>{formatCurrency(currentEquityInPosition)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-gray-700 mt-2 pt-2">
+                          <span>Liquidation Threshold (10% IM Buffer):</span>
+                          <span className="font-semibold text-red-500">{formatCurrency(liquidationThreshold)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span>Loss until Liquidation:</span>
+                          <span className="font-semibold text-red-400">{formatCurrency(currentEquityInPosition - liquidationThreshold)}</span>
+                      </div>
+                    </div>
+                </div>
+
+                {/* Margin Call/Liquidation Warning */}
+                {isLiquidation ? (
+                    <div className="bg-red-900/40 text-red-300 p-3 rounded-lg flex items-center border border-red-500 animate-pulse-slow">
+                        <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0" />
+                        <span className='font-bold'>
+                            LIQUIDATED! Position closed automatically.
+                        </span>
+                    </div>
+                ) : isMarginCall && (
+                    <div className="bg-yellow-900/40 text-yellow-300 p-3 rounded-lg flex items-center border border-yellow-500">
+                        <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0" />
+                        <span className='font-medium'>
+                            Margin Call! Equity is nearing the Liquidation Threshold.
+                        </span>
+                    </div>
+                )}
+
+
+                {/* Close Trade Button */}
+                <button
+                  onClick={handleCloseTrade}
+                  className="w-full py-4 text-xl font-bold rounded-lg transition duration-300 shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 active:bg-indigo-800"
+                >
+                  Close Position (Settle P&L)
+                </button>
+              </div>
+            )}
+            
+            {/* Disclaimer */}
+            <div className="mt-8 pt-4 border-t border-gray-700">
+              <p className="text-xs text-gray-600">
+                *IM Buffer is set at 10% of Initial Margin. Liquidation occurs when Equity in Position drops below this threshold.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default App;
+
